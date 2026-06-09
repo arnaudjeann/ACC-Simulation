@@ -1,0 +1,8 @@
+.DS_Store
+.vscode/
+
+build/
+out/
+bin/
+
+*.csv
