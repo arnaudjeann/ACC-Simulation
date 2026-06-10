@@ -1,6 +1,6 @@
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import numpy as np
 
 # Load the data
 try:
@@ -13,7 +13,7 @@ df['ttc'] = df['ttc'].replace(-1.0, np.nan)
 fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(10, 12), sharex=True)
 
 for ax in (ax1, ax2, ax3, ax4):
-    ax.tick_params(axis='y', labelsize=8)
+    ax.tick_params(axis='y', labelsize=9)
 
 # 1. Distance tracking
 ax1.plot(df['time'], df['distance'], label='Actual Distance', color='blue', linewidth=2)
