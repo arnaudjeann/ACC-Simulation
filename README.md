@@ -1,26 +1,52 @@
-# Adaptive Cruise Control (ACC) Simulation with PD Control
+# Adaptive Cruise Control (ACC) Simulation with PD Control and TTC
 
-A C++ and Python simulation of an Adaptive Cruise Control (ACC) system. This project implements a Proportional-Derivative (PD) control loop to regulate a vehicle's trailing distance and velocity based on physical constraints.
+A C++ and Python simulation of an Adaptive Cruise Control (ACC) system. The project uses a Proportional-Derivative (PD) control loop to regulate the distance between a controlled vehicle and a lead vehicle, while also computing a dynamic Time-to-Collision (TTC).
 
 ## Overview
 
-The simulation models an "Ego" vehicle tracking a "Lead" vehicle moving at a constant speed of 10 m/s. The ego vehicle adapts its acceleration and braking to maintain a target distance, including during a step-change scenario where the target distance shortens.
+The simulation starts with two vehicles traveling at `10 m/s` with a stable following distance of `40 m`. At `t = 5 s`, the lead vehicle stops and the target following distance changes from `40 m` to `25 m`.
+
+The controlled vehicle reacts by braking smoothly, respecting acceleration and braking limits. The simulation also calculates TTC to detect whether an emergency braking condition should be triggered.
 
 ### Key Features
-* **PD Control Loop:** Implemented in C++ to calculate control outputs.
-* **Actuator Clamping:** Uses physical bounds modeled after modern electric vehicles (Max acceleration: $+3.0\text{ m/s}^2$, Max braking: $-8.0\text{ m/s}^2$).
-* **Derivative via Relative Velocity:** Uses the physical delta ($v_{lead} - v_{ego}$) for derivative damping, avoiding numerical differentiation and integral wind-up.
-* **Visualization:** Exports simulation logs into a `data.csv` file, processed and rendered using Python (`pandas` and `matplotlib`).
+
+* **PD Control Loop:** Calculates acceleration from distance error and relative velocity.
+* **Relative Velocity Damping:** Uses `v_ego - v_lead` to reduce closing speed and avoid oscillations.
+* **Actuator Clamping:** Limits acceleration to `+3.0 m/s^2` and braking to `-8.0 m/s^2`.
+* **Time-to-Collision (TTC):** Computes TTC when the controlled vehicle is closing in on the lead vehicle.
+* **Emergency Braking Logic:** Applies maximum braking if TTC drops below the critical threshold of `2.0 s`.
+* **Visualization:** Exports telemetry to `data.csv`, then plots it with Python using `pandas` and `matplotlib`.
+
+---
+
+## Simulation Scenario
+
+Initial conditions:
+
+* Distance: `40 m`
+* Controlled vehicle velocity: `10 m/s`
+* Lead vehicle velocity: `10 m/s`
+* Target distance: `40 m`
+
+At `t = 5 s`:
+
+* Lead vehicle velocity becomes `0 m/s`
+* Target distance becomes `25 m`
+
+The controller then slows the controlled vehicle until it stops near the new target distance.
 
 ---
 
 ## Simulation Results
 
-The controller handles a sudden setpoint change at $t = 5\text{ s}$, shifting the target distance from 40m down to 25m:
+The generated plot contains four graphs:
 
-1. **Distance Tracking:** Converges to the target thresholds without overshoot or oscillations.
-2. **Velocity Profile:** Matches the lead vehicle's speed ($10\text{ m/s}$) at steady state, with a temporary acceleration phase to close the gap when the setpoint changes.
-3. **Actuator Output:** Operates within the defined physical limits of the clamping logic.
+1. **Distance Tracking:** Shows the actual following distance converging from `40 m` toward the new `25 m` target.
+2. **Velocity Profile:** Shows the controlled vehicle slowing down after the lead vehicle stops.
+3. **Acceleration:** Shows the braking command staying within the physical limits.
+4. **Time-to-Collision:** Shows TTC staying above the critical `2.0 s` threshold in the current scenario.
+
+In this scenario, emergency braking does not trigger because TTC remains above the critical threshold.
 
 ![Simulation Telemetry](<telemetry_test.png>)
 
@@ -28,25 +54,35 @@ The controller handles a sudden setpoint change at $t = 5\text{ s}$, shifting th
 
 ## Project Structure
 
-* `src/main.cpp`: The C++ simulation loop and PD controller logic.
-* `scripts/plot_results.py`: Python script utilizing Matplotlib to generate telemetry plots.
-* `data.csv`: Output telemetry containing time, distance, velocity, and acceleration logs.
+* `src/main.cpp`: C++ simulation loop, PD controller, TTC calculation, and CSV export.
+* `scripts/plot_results.py`: Python script that plots distance, velocity, acceleration, and TTC.
+* `data.csv`: Generated telemetry file containing `time`, `distance`, `velocity`, `lead_velocity`, `acceleration`, `setpoint`, and `ttc`.
 
 ---
 
 ## How to Run
 
 ### Prerequisites
-* A C++17 compatible compiler (e.g., Clang, GCC)
+
+* A C++17 compatible compiler, such as Clang or GCC
 * CMake
-* Python 3.x with `pandas` and `matplotlib` installed
+* Python 3.x
+* Python packages: `pandas`, `matplotlib`, and `numpy`
 
 ### Step 1: Compile and Run the C++ Simulation
-Generate the build system and run the binary to output the simulation data:
+
 ```bash
-# Configure and build
 cmake -B out/build
 cmake --build out/build
-
-# Run the simulation
 ./out/build/acc_sim
+```
+
+This generates or updates `data.csv`.
+
+### Step 2: Plot the Results
+
+```bash
+python3 scripts/plot_results.py
+```
+
+This opens the Matplotlib window with the four telemetry graphs.
