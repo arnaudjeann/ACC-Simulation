@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <limits>
 #include <cmath>
+#include <queue>
+#include <random>
 
 int main() {
     std::ofstream file("data.csv");
@@ -25,6 +27,20 @@ int main() {
     double ttc_threshold = 2.0;
     double closing_deadband = 0.5; // (m/s)
 
+    double prev_acceleration = 0.0;
+    double max_jerk = 15.0;
+    double actuator_delay = 0.3;
+
+    int delay_steps = static_cast<int>(actuator_delay / dt);
+    std::queue<double> accel_command_queue;
+    for (int i = 0; i < delay_steps; ++i) {
+        accel_command_queue.push(0.0); // Initialize queue with zero acceleration
+    }
+
+    std::default_random_engine generator(42); // Fixed seed for reproductibility
+    std::normal_distribution<double> dist_noise(0.0, 0.4); // Mean 0, Std Dev 0.4 meters
+    std::normal_distribution<double> vel_noise(0.0, 0.1); // Mean 0, Std Dev 0.1 m/s
+
     for (int t = 0; t < 200; ++t) {
         double current_time = t * dt;
 
@@ -34,22 +50,26 @@ int main() {
             setpoint = 25.0;
         }
 
-        // 1. Gap error
+        // 1. Add Environmental Uncertainty (Sensor Noise)
+        // The car acts on "measured" values, not perfectly clean ground truths
+        double measured_distance = distance + dist_noise(generator);
+        double measured_ego_velocity = velocity + vel_noise(generator);
+        double measured_relative_velocity = measured_ego_velocity - lead_velocity;
+
+        // 2. Gap error
         double gap_error = distance - setpoint;
 
-        // 2. Relative velocity
-        double relative_velocity = velocity - lead_velocity;
 
         // 3. TTC
         double ttc;
-        if (relative_velocity > closing_deadband) {
-            ttc = distance / relative_velocity;
+        if (measured_relative_velocity > closing_deadband) {
+            ttc = distance / measured_relative_velocity;
         } else {
             ttc = std::numeric_limits<double>::infinity();
         }
 
         // 4. PD control
-        double output = (kp_gap * gap_error) - (kv * relative_velocity);
+        double output = (kp_gap * gap_error) - (kv * measured_relative_velocity);
 
         // 5. Emergency brake — fires when TTC critical AND closing fast enough
         if (ttc < ttc_threshold) {
@@ -57,14 +77,24 @@ int main() {
         }
 
         // 6. Clamp
-        double acceleration = std::clamp(output, max_brake, max_accel);
+        double raw_acceleration_command = std::clamp(output, max_brake, max_accel);
 
-        // 8. Log — cap TTC at 20s for clean plotting, -1 for infinity
+        // 7. Actuator Delay (Latency Queue)
+        accel_command_queue.push(raw_acceleration_command);
+        double delayed_command = accel_command_queue.front();
+        accel_command_queue.pop();
+
+        // 8. Jerk Limiting
+        double acceleration = std::clamp(delayed_command, 
+            prev_acceleration - max_jerk * dt, 
+            prev_acceleration + max_jerk * dt);
+
+        prev_acceleration = acceleration;
+
+        // 9. Log — cap TTC at 20s for clean plotting, -1 for infinity
         double ttc_log;
-        if (std::isinf(ttc)) {
+        if (std::isinf(ttc) || ttc > 20.0) {
             ttc_log = -1.0;
-        } else if (ttc > 20.0) {
-            ttc_log = -1.0;  // off-chart, treat as N/A
         } else {
             ttc_log = ttc;
         }
@@ -77,7 +107,7 @@ int main() {
              << setpoint << ","
              << ttc_log << "\n";
 
-        // 9. Integrate
+        // 10. Physics Integration
         velocity += acceleration * dt;
         if (velocity < 0.0) velocity = 0.0;
 

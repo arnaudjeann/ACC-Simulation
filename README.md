@@ -1,62 +1,55 @@
-# Adaptive Cruise Control (ACC) Simulation with PD Control and TTC
+# Adaptive Cruise Control (ACC) Simulation with Physical Constraints and Sensor Noise
 
-A C++ and Python simulation of an Adaptive Cruise Control (ACC) system. The project uses a Proportional-Derivative (PD) control loop to regulate the distance between a controlled vehicle and a lead vehicle, while also computing a dynamic Time-to-Collision (TTC).
+A C++ and Python simulation framework modeling an Adaptive Cruise Control (ACC) system. The project uses a Proportional-Derivative (PD) control loop coupled with Time-to-Collision (TTC) safety overrides, while accounting for real-world physical limitations and environmental noise.
 
 ## Overview
 
-The simulation starts with two vehicles traveling at `10 m/s` with a stable following distance of `40 m`. At `t = 5 s`, the lead vehicle stops and the target following distance changes from `40 m` to `25 m`.
+The simulation evaluates an ego-vehicle tracking a lead vehicle initially traveling at `10 m/s` with a stable following distance of `40 m`. At `t = 5 s`, a worst-case edge-case is triggered: the lead vehicle instantly drops to `0 m/s` (simulating an emergency stop or stationary obstacle), and the target tracking gap updates to `25 m`.
 
-The controlled vehicle reacts by braking smoothly, respecting acceleration and braking limits. The simulation also calculates TTC to detect whether an emergency braking condition should be triggered.
+Rather than executing in an idealized mathematical bubble, the ego-vehicle operates under realistic actuator delays, jerk restrictions, and corrupted radar sensor data.
 
 ### Key Features
 
-* **PD Control Loop:** Calculates acceleration from distance error and relative velocity.
-* **Relative Velocity Damping:** Uses `v_ego - v_lead` to reduce closing speed and avoid oscillations.
-* **Actuator Clamping:** Limits acceleration to `+3.0 m/s^2` and braking to `-8.0 m/s^2`.
-* **Time-to-Collision (TTC):** Computes TTC when the controlled vehicle is closing in on the lead vehicle.
-* **Emergency Braking Logic:** Applies maximum braking if TTC drops below the critical threshold of `2.0 s`.
-* **Visualization:** Exports telemetry to `data.csv`, then plots it with Python using `pandas` and `matplotlib`.
+* **PD Control Loop with Damping:** Closed-loop regulation using tracking gap error and relative velocity damping to minimize spacing error without trailing oscillations.
+* **Environmental Uncertainty (Sensor Noise):** Simulates Gaussian measurement noise on radar distance ($\sigma = 0.4\text{m}$) and velocity ($\sigma = 0.1\text{m/s}$) streams, testing controller robustness against raw signal jitter.
+* **Actuator Delay Modeling:** Implements a state-buffered latency queue (`0.3 s`) mimicking the hydraulic pressure build-up time required for brake calipers to physically engage.
+* **Passenger Comfort (Jerk Limiting):** Imposes a strict dynamic constraint on the rate of change of acceleration ($\pm 15.0\text{ m/s}^3$) to prevent instantaneous, physically impossible transitions.
+* **Safety-Critical Override (TTC):** Continuously monitors the Time-to-Collision horizon. If the calculated TTC drops below the critical threshold of `2.0 s`, the system bypasses standard PD tracking to command an immediate maximum emergency brake.
 
 ---
 
 ## Simulation Scenario
 
 Initial conditions:
-
-* Distance: `40 m`
-* Controlled vehicle velocity: `10 m/s`
+* Target tracking distance: `40 m`
+* Ground-truth tracking distance: `40 m`
+* Ego vehicle velocity: `10 m/s`
 * Lead vehicle velocity: `10 m/s`
-* Target distance: `40 m`
 
-At `t = 5 s`:
-
-* Lead vehicle velocity becomes `0 m/s`
-* Target distance becomes `25 m`
-
-The controller then slows the controlled vehicle until it stops near the new target distance.
+Dynamic event at `t = 5 s`:
+* Lead vehicle velocity steps down to `0 m/s`
+* Controller target tracking distance transitions to `25 m`
 
 ---
 
-## Simulation Results
+## Simulation Results & Telemetry Analysis
 
-The generated plot contains four graphs:
+The Python visualization script breaks down the system behaviors across four distinct physical properties:
 
-1. **Distance Tracking:** Shows the actual following distance converging from `40 m` toward the new `25 m` target.
-2. **Velocity Profile:** Shows the controlled vehicle slowing down after the lead vehicle stops.
-3. **Acceleration:** Shows the braking command staying within the physical limits.
-4. **Time-to-Collision:** Shows TTC staying above the critical `2.0 s` threshold in the current scenario.
+1. **Distance Tracking:** Tracks the true distance converging from `40 m` smoothly to the new `25 m` baseline without under-riding or colliding.
+2. **Velocity Profile:** Captures the response delay immediately following `t = 5 s` before deceleration begins, followed by a controlled deceleration profile to a full stop.
+3. **Acceleration (Actuator Output):** Highlights the realistic "fuzzy" micro-adjustments during steady-state cruise caused by radar noise tracking, followed by a ramped slope during heavy braking governed strictly by the jerk limiter.
+4. **Time-to-Collision (TTC):** Represents the safety margin decay. In the baseline run, the smooth jerk-limited deceleration is fast enough to keep the minimum TTC floor at ~`3.8 s`, safely avoiding the `2.0 s` emergency brake lockup trigger.
 
-In this scenario, emergency braking does not trigger because TTC remains above the critical threshold.
-
-![Simulation Telemetry](<telemetry_test.png>)
+![Simulation Telemetry](telemetry_test.png)
 
 ---
 
 ## Project Structure
 
-* `src/main.cpp`: C++ simulation loop, PD controller, TTC calculation, and CSV export.
-* `scripts/plot_results.py`: Python script that plots distance, velocity, acceleration, and TTC.
-* `data.csv`: Generated telemetry file containing `time`, `distance`, `velocity`, `lead_velocity`, `acceleration`, `setpoint`, and `ttc`.
+* `src/main.cpp`: Core C++ loop hosting the physics update engine, normal noise distributions, latency buffers, and telemetry serialization.
+* `scripts/plot_results.py`: Data ingestion and visualization script leveraging Matplotlib step-plots to properly display discrete actuator steps.
+* `data.csv`: Telemetry log containing synced indices for `time`, `distance`, `velocity`, `lead_velocity`, `acceleration`, `setpoint`, and `ttc`.
 
 ---
 
@@ -64,10 +57,10 @@ In this scenario, emergency braking does not trigger because TTC remains above t
 
 ### Prerequisites
 
-* A C++17 compatible compiler, such as Clang or GCC
-* CMake
+* A C++17 compatible compiler (GCC, Clang, or MSVC)
+* CMake (v3.15+)
 * Python 3.x
-* Python packages: `pandas`, `matplotlib`, and `numpy`
+* Required Python packages: `numpy`, `pandas`, `matplotlib`
 
 ### Step 1: Compile and Run the C++ Simulation
 
@@ -75,14 +68,3 @@ In this scenario, emergency braking does not trigger because TTC remains above t
 cmake -B out/build
 cmake --build out/build
 ./out/build/acc_sim
-```
-
-This generates or updates `data.csv`.
-
-### Step 2: Plot the Results
-
-```bash
-python3 scripts/plot_results.py
-```
-
-This opens the Matplotlib window with the four telemetry graphs.
